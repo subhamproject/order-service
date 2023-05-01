@@ -38,6 +38,7 @@ func main() {
 
 	r := gin.Default()
 
+	r.GET("/health", GetServiceHealthHandler)
 	r.GET("/order", GetUserOrderHandler)
 	r.POST("/order", CreateUserOrderHandler)
 
@@ -93,4 +94,8 @@ func CreateUserOrderHandler(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, "success!")
+}
+
+func GetServiceHealthHandler(c *gin.Context) {
+	c.JSON(http.StatusOK, "I'm Healthly")
 }
