@@ -19,6 +19,7 @@ import (
 	"github.com/subhamproject/order-service/otelsvc"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -88,20 +89,15 @@ func main() {
 }
 
 func GetUserOrderHandler(c *gin.Context) {
-	span := trace.SpanFromContext(c)
-	fmt.Println("received user order request headers", c.Request.Header)
-	if span.SpanContext().IsValid() {
-		fmt.Println("SpanId", span.SpanContext().SpanID())
+	fmt.Println("request-headers : ", c.Request.Header)
 
-		if span.SpanContext().HasTraceID() {
-			fmt.Println("--TraceId", span.SpanContext().TraceID())
-		}
-	}
+	tracer := otel.Tracer("GetUserOrderHandler")
+	_, span := tracer.Start(c.Request.Context(), "GetUserOrderHandler")
 
 	defer span.End()
 
 	id := c.Query("userId")
-	teacher, err := ordermgr.GetUserOrder(id)
+	teacher, err := ordermgr.GetUserOrder(c.Request.Context(), id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "unable retrieve order"})
 		return
@@ -122,7 +118,7 @@ func CreateUserOrderHandler(c *gin.Context) {
 	defer span.End()
 
 	id := c.Query("userId")
-	err := ordermgr.CreateUserOrder(id)
+	err := ordermgr.CreateUserOrder(c.Request.Context(), id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "unable create new user order, error: " + err.Error()})
 		return

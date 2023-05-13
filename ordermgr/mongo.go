@@ -11,6 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
+	"go.opentelemetry.io/contrib/instrumentation/go.mongodb.org/mongo-driver/mongo/otelmongo"
 )
 
 var orderCollection *mongo.Collection
@@ -54,8 +55,12 @@ func connectLocal(uri, user, pass string) (*mongo.Client, context.Context,
 		Username: user,
 		Password: pass,
 	}
+	opts := options.Client().ApplyURI(uri).SetAuth(credential)
+
+	//Add instrumentation to client options
+	opts.Monitor = otelmongo.NewMonitor()
 	// mongo.Connect return mongo.Client method
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri).SetAuth(credential))
+	client, err := mongo.Connect(ctx, opts)
 	return client, ctx, cancel, err
 }
 
@@ -70,6 +75,9 @@ func connect(uri string) (*mongo.Client, context.Context,
 		AuthMechanism: "MONGODB-X509",
 	}
 	clientOpts := options.Client().ApplyURI(uri).SetAuth(credential)
+
+	//Add instrumentation to client options
+	clientOpts.Monitor = otelmongo.NewMonitor()
 
 	client, err := mongo.Connect(ctx, clientOpts)
 	if err != nil {
