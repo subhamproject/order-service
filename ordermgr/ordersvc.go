@@ -10,11 +10,11 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-func GetUserOrder(userId string) (Order, error) {
+func GetUserOrder(ctx context.Context, userId string) (Order, error) {
 	fmt.Printf("received request to get order for user %s, \n", userId)
 	var order Order
 	filter := bson.D{{"userid", userId}}
-	err := orderCollection.FindOne(context.Background(), filter).Decode(&order)
+	err := orderCollection.FindOne(ctx, filter).Decode(&order)
 	if err != nil {
 		fmt.Printf("failed to read order for user: %s, error: %v\n", userId, err)
 		return order, err
@@ -29,7 +29,7 @@ type Order struct {
 	Date   string `json:"date"`
 }
 
-func CreateUserOrder(userId string) error {
+func CreateUserOrder(ctx context.Context, userId string) error {
 	fmt.Printf("received request to creare new order for user %s, \n", userId)
 	id, price := genOrderIdAndPrice()
 	order := Order{
@@ -38,7 +38,7 @@ func CreateUserOrder(userId string) error {
 		Price:  price,
 		Date:   time.Now().Format(time.RFC3339),
 	}
-	result, err := orderCollection.InsertOne(context.Background(), order)
+	result, err := orderCollection.InsertOne(ctx, order)
 	if err != nil {
 		fmt.Printf("failed to create order for user: %s, error: %v\n", userId, err)
 		return err

@@ -16,7 +16,11 @@ import (
 	"syscall"
 
 	"github.com/subhamproject/order-service/ordermgr"
+	"github.com/subhamproject/order-service/otelsvc"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func main() {
@@ -36,8 +40,13 @@ func main() {
 
 	wg.Wait()
 
-	r := gin.Default()
+	log.Printf("initializing otel connection...")
+	otelUrl := ordermgr.GetEnvParam("OTEL_COLLECTOR_URL", "localhost:4317")
+	otelShutdown := otelsvc.InitTracerProvider(otelUrl)
 
+	r := gin.Default()
+	f := func(req *http.Request) bool { return req.URL.Path != "/health" }
+	r.Use(otelgin.Middleware("order-service", otelgin.WithFilter(f)))
 	r.GET("/health", GetServiceHealthHandler)
 	r.GET("/order", GetUserOrderHandler)
 	r.POST("/order", CreateUserOrderHandler)
@@ -65,6 +74,9 @@ func main() {
 	//clode mongo driver
 	ordermgr.CloseMongoDB(client, ctx, cFund)
 
+	//close otel conn
+	otelShutdown()
+
 	// The context is used to inform the server it has 5 seconds to finish
 	// the request it is currently handling
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -77,8 +89,15 @@ func main() {
 }
 
 func GetUserOrderHandler(c *gin.Context) {
+	fmt.Println("request-headers : ", c.Request.Header)
+
+	tracer := otel.Tracer("GetUserOrderHandler")
+	_, span := tracer.Start(c.Request.Context(), "GetUserOrderHandler")
+
+	defer span.End()
+
 	id := c.Query("userId")
-	teacher, err := ordermgr.GetUserOrder(id)
+	teacher, err := ordermgr.GetUserOrder(c.Request.Context(), id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "unable retrieve order"})
 		return
@@ -87,8 +106,19 @@ func GetUserOrderHandler(c *gin.Context) {
 }
 
 func CreateUserOrderHandler(c *gin.Context) {
+	span := trace.SpanFromContext(c)
+	fmt.Println("received user order request headers", c.Request.Header)
+	if span.SpanContext().IsValid() {
+		fmt.Println("SpanId", span.SpanContext().SpanID())
+
+		if span.SpanContext().HasTraceID() {
+			fmt.Println("--TraceId", span.SpanContext().TraceID())
+		}
+	}
+	defer span.End()
+
 	id := c.Query("userId")
-	err := ordermgr.CreateUserOrder(id)
+	err := ordermgr.CreateUserOrder(c.Request.Context(), id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "unable create new user order, error: " + err.Error()})
 		return
