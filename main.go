@@ -17,6 +17,7 @@ import (
 
 	"github.com/subhamproject/order-service/ordermgr"
 	"github.com/subhamproject/order-service/otelsvc"
+	"github.com/subhamproject/order-service/utils"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.opentelemetry.io/otel"
@@ -41,8 +42,9 @@ func main() {
 	wg.Wait()
 
 	log.Printf("initializing otel connection...")
-	otelUrl := ordermgr.GetEnvParam("OTEL_COLLECTOR_URL", "localhost:4317")
-	otelShutdown := otelsvc.InitTracerProvider(otelUrl)
+	otelUrl := utils.GetEnvParam("OTEL_COLLECTOR_URL", "localhost:4317")
+	otelEnable := utils.GetEnvBoolParam("OTEL_ENABLE", false)
+	otelShutdown := otelsvc.InitTracerProvider(otelUrl, otelEnable)
 
 	r := gin.Default()
 	f := func(req *http.Request) bool { return req.URL.Path != "/health" }

@@ -68,7 +68,7 @@ func newExporter(ctx context.Context, conn *grpc.ClientConn) (*otlptrace.Exporte
 // the Jaeger exporter that will send spans to the provided url. The returned
 // InitTracerProvider will also use a Resource configured with all the information
 // about the application.
-func InitTracerProvider(url string) func() {
+func InitTracerProvider(url string, otelEnable bool) func() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 
@@ -77,27 +77,35 @@ func InitTracerProvider(url string) func() {
 	// if err != nil {
 	// 	return nil, err
 	// }
-
+	var tracerProvider *tracesdk.TracerProvider
+	resources := resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceNameKey.String(service),
+		attribute.String("environment", environment),
+		attribute.Int64("ID", id),
+	)
 	stdoutExp, err := StdoutTraceExporter()
 	reportErr(err, "failed to create stdout trace exporter")
 
-	// Set up a trace exporter
-	traceExporter, err := OtelTraceExporter(ctx, url)
-	reportErr(err, "failed to create otel trace exporter")
-
-	tracerProvider := tracesdk.NewTracerProvider(
-		// Always be sure to batch in production.
-		tracesdk.WithBatcher(traceExporter),
-		tracesdk.WithBatcher(stdoutExp),
-		// Record information about this application in a Resource.
-		tracesdk.WithResource(resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceNameKey.String(service),
-			attribute.String("environment", environment),
-			attribute.Int64("ID", id),
-		)),
-	)
-
+	if otelEnable {
+		// Set up a trace exporter
+		traceExporter, err := OtelTraceExporter(ctx, url)
+		reportErr(err, "failed to create otel trace exporter")
+		tracerProvider = tracesdk.NewTracerProvider(
+			// Always be sure to batch in production.
+			tracesdk.WithBatcher(traceExporter),
+			tracesdk.WithBatcher(stdoutExp),
+			// Record information about this application in a Resource.
+			tracesdk.WithResource(resources),
+		)
+	} else {
+		tracerProvider = tracesdk.NewTracerProvider(
+			// Always be sure to batch in production.
+			tracesdk.WithBatcher(stdoutExp),
+			// Record information about this application in a Resource.
+			tracesdk.WithResource(resources),
+		)
+	}
 	otel.SetTracerProvider(tracerProvider)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 	return func() {
