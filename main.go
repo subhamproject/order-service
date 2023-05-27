@@ -16,6 +16,7 @@ import (
 	"syscall"
 
 	"github.com/subhamproject/order-service/ordermgr"
+	"github.com/subhamproject/order-service/utils"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -42,7 +43,7 @@ func main() {
 	r.GET("/order", GetUserOrderHandler)
 	r.POST("/order", CreateUserOrderHandler)
 
-	serverPort := ordermgr.GetEnvParam("SERVICE_PORT", "8081")
+	serverPort := utils.GetEnvParam("SERVICE_PORT", "8081")
 	srv := &http.Server{
 		Addr:    ":" + serverPort,
 		Handler: r,

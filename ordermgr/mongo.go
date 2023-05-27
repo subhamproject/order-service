@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"time"
 
+	"github.com/subhamproject/order-service/utils"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
+	"go.opentelemetry.io/contrib/instrumentation/go.mongodb.org/mongo-driver/mongo/otelmongo"
 )
 
 var orderCollection *mongo.Collection
@@ -40,6 +41,27 @@ func close(client *mongo.Client, ctx context.Context,
 // context.Context will be used set deadlines for process.
 // context.CancelFunc will be used to cancel context and
 // resource associated with it.
+func connectLocal(uri, user, pass string) (*mongo.Client, context.Context,
+	context.CancelFunc, error) {
+
+	// ctx will be used to set deadline for process, here
+	// deadline will of 30 seconds.
+	ctx, cancel := context.WithTimeout(context.Background(),
+		30*time.Second)
+
+	credential := options.Credential{
+		Username: user,
+		Password: pass,
+	}
+	opts := options.Client().ApplyURI(uri).SetAuth(credential)
+
+	//Add instrumentation to client options
+	opts.Monitor = otelmongo.NewMonitor()
+	// mongo.Connect return mongo.Client method
+	client, err := mongo.Connect(ctx, opts)
+
+	return client, ctx, cancel, err
+}
 
 func connect(uri string) (*mongo.Client, context.Context,
 	context.CancelFunc, error) {
@@ -52,6 +74,8 @@ func connect(uri string) (*mongo.Client, context.Context,
 		AuthMechanism: "MONGODB-X509",
 	}
 	clientOpts := options.Client().ApplyURI(uri).SetAuth(credential)
+	// Add instrumentation to client options
+	clientOpts.Monitor = otelmongo.NewMonitor()
 
 	client, err := mongo.Connect(ctx, clientOpts)
 	if err != nil {
@@ -89,20 +113,27 @@ func ping(client *mongo.Client, ctx context.Context) error {
 func InitMongoDB() (*mongo.Client, context.Context,
 	context.CancelFunc, error) {
 
-	user := GetEnvParam("MONGO_USERNAME", "root")
-	pass := GetEnvParam("MONGO_PASSWORD", "rootpassword")
-	caFilePath := GetEnvParam("MONGO_CA_CERT", "/home/om/go/src/github.com/subhamproject/devops-demo/certs/mongoCA.crt")
-	certificateKeyFilePath := GetEnvParam("MONGO_CLIENT_CERT_KEY", "/home/om/go/src/github.com/subhamproject/devops-demo/certs/mongo-client.pem")
+	devMode := utils.GetEnvBoolParam("DEV_MODE", true)
+	user := utils.GetEnvParam("MONGO_USERNAME", "root")
+	pass := utils.GetEnvParam("MONGO_PASSWORD", "rootpassword")
+	caFilePath := utils.GetEnvParam("MONGO_CA_CERT", "/home/om/go/src/github.com/subhamproject/devops-demo/certs/mongoCA.crt")
+	certificateKeyFilePath := utils.GetEnvParam("MONGO_CLIENT_CERT_KEY", "/home/om/go/src/github.com/subhamproject/devops-demo/certs/mongo-client.pem")
+	uri := utils.GetEnvParam("MONGO_URL", "mongodb://%s:%s@mongo1:27011,mongo2:27012,mongo3:27013/demo?replicaSet=rs0&tlsCAFile=%s&tlsCertificateKeyFile=%s")
 
-	uri := GetEnvParam("MONGO_URL", "mongodb://%s:%s@mongo1:27011,mongo2:27011,mongo3:27011/demo?replicaSet=rs0&tlsCAFile=%s&tlsCertificateKeyFile=%s")
+	var client *mongo.Client
+	var ctx context.Context
+	var cFunc context.CancelFunc
+	var err error
 
-	//DB_URL: "mongodb://test:rcxdev@rcx-mongo:27017,mongors1n1:27017,mongors2n1:27017/test?replicaSet=rs0"
-
-	uri = fmt.Sprintf(uri, user, pass, caFilePath, certificateKeyFilePath)
-
+	if devMode {
+		uri = "mongodb://localhost:27017"
+		client, ctx, cFunc, err = connectLocal(uri, user, pass)
+	} else {
+		uri = fmt.Sprintf(uri, user, pass, caFilePath, certificateKeyFilePath)
+		client, ctx, cFunc, err = connect(uri)
+	}
 	// Get Client, Context, CancelFunc and
 	// err from connect method.
-	client, ctx, cFund, err := connect(uri)
 	if err != nil {
 		panic(err)
 	}
@@ -112,7 +143,7 @@ func InitMongoDB() (*mongo.Client, context.Context,
 
 	orderCollection = client.Database("demo").Collection("orders")
 
-	return client, ctx, cFund, err
+	return client, ctx, cFunc, err
 }
 
 func CloseMongoDB(client *mongo.Client, ctx context.Context, cancel context.CancelFunc) {
@@ -122,12 +153,4 @@ func CloseMongoDB(client *mongo.Client, ctx context.Context, cancel context.Canc
 	close(client, ctx, cancel)
 
 	fmt.Println("mongodb connected closed")
-}
-
-// GetEnvParam : return string environmental param if exists, otherwise return default
-func GetEnvParam(param string, dflt string) string {
-	if v, exists := os.LookupEnv(param); exists {
-		return v
-	}
-	return dflt
 }
